@@ -1,1 +1,1169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Eco do Medo - Enhanced Cinematic Horror Game</title>
+    <!-- Tailwind CSS para estilização moderna e rápida -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Biblioteca Three.js principal -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020202;
+            font-family: 'Courier New', Courier, monospace;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        /* Efeito de Vinheta Cinematográfica */
+        .vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            box-shadow: inset 0 0 100px rgba(0,0,0,0.95), inset 0 0 200px rgba(0,0,0,0.9);
+            pointer-events: none;
+            z-index: 10;
+        }
 
+        /* Ruído de Estática VHS */
+        .noise {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 0%, rgba(0,0,0,0.8) 100%),
+                        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 11;
+        }
+
+        /* Efeito de Intermitência de Luz (Flicker) para sustos e baixa energia */
+        @keyframes flicker {
+            0%, 19.999%, 22%, 62.999%, 64%, 64.999%, 70%, 100% { opacity: 0.99; filter: hue-rotate(0deg) saturate(1); }
+            20%, 21.999%, 63%, 63.999%, 65%, 69.999% { opacity: 0.3; filter: hue-rotate(10deg) saturate(1.5); }
+        }
+        
+        .screamer-active {
+            animation: flicker 0.15s infinite;
+        }
+
+        /* Joystick Virtual para Celulares */
+        .joystick-zone {
+            position: absolute;
+            bottom: 40px;
+            left: 40px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            z-index: 30;
+            display: none;
+            touch-action: none;
+        }
+
+        .joystick-button {
+            position: absolute;
+            top: 35px;
+            left: 35px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center">
+
+    <!-- Efeitos de Câmera e Filtros -->
+    <div class="vignette"></div>
+    <div class="noise"></div>
+
+    <!-- HUD de Gravação VHS (Cinematic Style) -->
+    <div id="hud" class="absolute inset-0 z-20 pointer-events-none flex flex-col justify-between p-6 text-red-600 font-bold opacity-0 transition-opacity duration-1000 select-none">
+        <div class="flex justify-between items-start text-xs md:text-sm tracking-wider">
+            <div class="flex items-center gap-2">
+                <span class="w-3 h-3 bg-red-600 rounded-full animate-pulse"></span>
+                <span>GRAVAÇÃO RAW [REC]</span>
+            </div>
+            <div id="battery-container" class="flex items-center gap-1">
+                <span>LANTERNA: </span>
+                <span id="battery-pct">100%</span>
+                <div class="w-10 h-4 border border-red-600 p-0.5 flex">
+                    <div id="battery-bar" class="h-full bg-red-600 w-full transition-all duration-300"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alertas de jogabilidade e objetivos -->
+        <div class="absolute top-1/4 left-1/2 -translate-x-1/2 text-center">
+            <div id="game-prompt" class="text-white text-lg font-normal tracking-widest uppercase bg-black/40 px-4 py-2 rounded border border-white/10 opacity-0 transition-all duration-500">
+                Encontre uma saída do labirinto...
+            </div>
+        </div>
+
+        <div class="flex justify-between items-end text-xs md:text-sm">
+            <div>
+                <p>ISO 3200</p>
+                <p>F2.8 | 24fps</p>
+            </div>
+            <div class="text-right">
+                <p id="relics-counter">RELÍQUIAS: 0 / 3</p>
+                <p class="text-white/60 text-xxs font-normal">CORRA SE O CORAÇÃO ACELERAR</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Interface Principal / Menu Inicial -->
+    <div id="main-menu" class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black text-center p-4">
+        <h1 class="text-4xl md:text-7xl font-black text-red-700 tracking-widest mb-2 uppercase animate-pulse">
+            ECO DO MEDO
+        </h1>
+        <p class="text-gray-500 text-xs md:text-sm tracking-widest mb-12 max-w-md">
+            Um pesadelo imersivo gerado em tempo real. Use fones de ouvido para uma experiência aterrorizante.
+        </p>
+
+        <!-- Botão de Start -->
+        <button id="start-btn" class="px-8 py-3 bg-red-700 hover:bg-red-600 text-white font-bold tracking-widest rounded border border-red-900 shadow-lg shadow-red-900/30 transition-all duration-300 transform hover:scale-105 uppercase">
+            Iniciar Experiência
+        </button>
+
+        <div class="mt-12 text-gray-400 text-xs text-left max-w-sm space-y-2 bg-zinc-950 p-4 rounded border border-zinc-900">
+            <p class="text-red-600 font-bold mb-1 uppercase">Como Sobreviver:</p>
+            <p>⌨️ <b class="text-white">WASD</b> ou Setas para andar.</p>
+            <p>🖱️ <b class="text-white">Mouse</b> para olhar ao redor (Clique na tela).</p>
+            <p>🔋 Colete baterias brilhando em <span class="text-yellow-400 font-bold">Amarelo</span> para a lanterna.</p>
+            <p>💎 Colete as <span class="text-cyan-400 font-bold">3 Relíquias Azuis</span> e escape da Sombra.</p>
+            <p class="text-[10px] text-zinc-500 mt-2">Suporte completo para toque na tela em dispositivos móveis.</p>
+        </div>
+    </div>
+
+    <!-- Tela de Game Over / Vitória -->
+    <div id="end-screen" class="absolute inset-0 z-40 flex flex-col items-center justify-center bg-black text-center p-4 hidden">
+        <h2 id="end-title" class="text-5xl md:text-8xl font-black text-red-700 tracking-widest uppercase mb-4">
+            VOCÊ FOI PEGO
+        </h2>
+        <p id="end-subtitle" class="text-gray-400 text-sm tracking-wider max-w-md mb-8">
+            A escuridão consumiu sua sanidade de forma irreversível.
+        </p>
+        <button id="restart-btn" class="px-8 py-3 bg-white hover:bg-gray-200 text-black font-bold tracking-widest rounded transition-all duration-300 uppercase">
+            Tentar Novamente
+        </button>
+    </div>
+
+    <!-- Joystick Virtual (Apenas mobile) -->
+    <div id="joystick" class="joystick-zone">
+        <div id="joystick-handle" class="joystick-button"></div>
+    </div>
+
+    <!-- Área de renderização do WebGL Canvas -->
+    <div id="canvas-container" class="w-full h-full"></div>
+
+    <script>
+        // --- CONSTANTES DO SISTEMA E PERSISTÊNCIA ---
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'enhanced-horror-game-canvas';
+        
+        // --- GERENCIAMENTO DE ESTADO ---
+        const GameState = {
+            isPlaying: false,
+            relicsCollected: 0,
+            totalRelics: 3,
+            battery: 100,
+            flashlightOn: true,
+            isScreamerActive: false,
+            isMobile: false
+        };
+
+        // --- VARIÁVEIS DO THREE.JS ---
+        let scene, camera, renderer, clock;
+        let flashlight, ambientLight;
+        let mapGrid = [];
+        let wallMeshes = [];
+        let relics = [];
+        let batteries = [];
+        let monster;
+        
+        // --- CONFIGURAÇÃO DO MAPA (10x10) ---
+        // 1: Parede, 0: Caminho, 2: Spawn Player, 3: Relíquia, 4: Bateria, 5: Spawn Monstro
+        const mapSize = 12;
+        const mapLayout = [
+            [1,1,1,1,1,1,1,1,1,1,1,1],
+            [1,2,0,0,1,0,0,0,0,3,0,1],
+            [1,1,1,0,1,0,1,1,1,1,0,1],
+            [1,0,0,0,0,0,0,0,0,1,0,1],
+            [1,0,1,1,1,1,1,1,0,1,0,1],
+            [1,0,1,3,0,0,0,1,0,0,4,1],
+            [1,0,1,1,1,0,1,1,1,1,0,1],
+            [1,0,0,0,1,0,0,0,0,1,0,1],
+            [1,1,1,0,1,1,1,1,0,1,0,1],
+            [1,4,0,0,0,0,3,1,0,0,5,1],
+            [1,1,1,1,1,1,0,1,1,1,1,1],
+            [1,1,1,1,1,1,1,1,1,1,1,1]
+        ];
+        const cellSize = 10;
+
+        // --- SISTEMA DE CONTROLE ---
+        const moveDirection = { forward: 0, backward: 0, left: 0, right: 0 };
+        let playerVelocity = new THREE.Vector3();
+        let playerRotation = { yaw: 0, pitch: 0 };
+        const playerSpeed = 16.0;
+        const playerRadius = 1.2;
+        
+        // --- COMPONENTE DE ÁUDIO SINTETIZADO (Web Audio API) ---
+        class SoundEngine {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (this.ctx) return;
+                // Inicializa contexto de áudio seguro após interação do usuário
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                this.ctx = new AudioContextClass();
+                this.startHeartbeat();
+                this.startBackgroundDrone();
+            }
+
+            // Batimento cardíaco procedural de baixa frequência
+            startHeartbeat() {
+                const beat = () => {
+                    if (!GameState.isPlaying) return;
+                    
+                    // Frequência do batimento cardíaco acelera dependendo da proximidade do monstro
+                    let interval = 1200;
+                    if (monster) {
+                        const dist = camera.position.distanceTo(monster.position);
+                        if (dist < 30) {
+                            interval = THREE.MathUtils.mapLinear(dist, 5, 30, 300, 1200);
+                        }
+                    }
+
+                    // Sintetiza som do batimento cardíaco
+                    try {
+                        const osc = this.ctx.createOscillator();
+                        const gain = this.ctx.createGain();
+                        
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(55, this.ctx.currentTime); // Sub-bass
+                        osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+                        gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+                        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+
+                        osc.connect(gain);
+                        gain.connect(this.ctx.destination);
+
+                        osc.start();
+                        osc.stop(this.ctx.currentTime + 0.3);
+                    } catch(e) {}
+
+                    setTimeout(beat, interval);
+                };
+                beat();
+            }
+
+            // Drone de ambiente tenso
+            startBackgroundDrone() {
+                try {
+                    const osc = this.ctx.createOscillator();
+                    const filter = this.ctx.createBiquadFilter();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'sawtooth';
+                    osc.frequency.setValueAtTime(45, this.ctx.currentTime); // Super low pitch
+
+                    filter.type = 'lowpass';
+                    filter.frequency.setValueAtTime(100, this.ctx.currentTime);
+
+                    gain.gain.setValueAtTime(0.15, this.ctx.currentTime);
+
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start();
+                    
+                    // Modula a frequência de corte para gerar movimento atmosférico
+                    setInterval(() => {
+                        if (this.ctx && GameState.isPlaying) {
+                            const mod = Math.sin(Date.now() * 0.001) * 30 + 90;
+                            filter.frequency.setValueAtTime(mod, this.ctx.currentTime);
+                        }
+                    }, 100);
+                } catch(e) {}
+            }
+
+            // Efeito sonoro de susto agudo e metálico
+            playScreamerSound() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const duration = 2.0;
+
+                    // Som agudo irritante
+                    const osc1 = this.ctx.createOscillator();
+                    const osc2 = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc1.type = 'sawtooth';
+                    osc1.frequency.setValueAtTime(1200, now);
+                    osc1.frequency.linearRampToValueAtTime(100, now + duration);
+
+                    osc2.type = 'square';
+                    osc2.frequency.setValueAtTime(800, now);
+                    osc2.frequency.linearRampToValueAtTime(50, now + duration);
+
+                    gain.gain.setValueAtTime(0.8, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+
+                    osc1.connect(gain);
+                    osc2.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc1.start();
+                    osc2.start();
+                    osc1.stop(now + duration);
+                    osc2.stop(now + duration);
+                } catch(e) {}
+            }
+
+            // Som rápido de item coletado
+            playCollectSound() {
+                if (!this.ctx) return;
+                try {
+                    const now = this.ctx.currentTime;
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(300, now);
+                    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.15);
+
+                    gain.gain.setValueAtTime(0.3, now);
+                    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+
+                    osc.start();
+                    osc.stop(now + 0.2);
+                } catch(e) {}
+            }
+        }
+
+        const soundEngine = new SoundEngine();
+
+        // --- SISTEMA DE TEXTURAS PROCEDURAIS ---
+        // Cria texturas realistas dinamicamente via HTML5 Canvas para evitar assets externos quebrados
+        function createProceduralBrickTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            // Fundo de concreto cinza escuro mofado
+            ctx.fillStyle = '#161616';
+            ctx.fillRect(0, 0, 512, 512);
+
+            // Adiciona ruído de pedra
+            for (let i = 0; i < 20000; i++) {
+                const size = Math.random() * 2;
+                const brightness = Math.floor(Math.random() * 30) - 15;
+                ctx.fillStyle = `rgb(${22 + brightness}, ${22 + brightness}, ${22 + brightness})`;
+                ctx.fillRect(Math.random() * 512, Math.random() * 512, size, size);
+            }
+
+            // Desenha os blocos de tijolo
+            ctx.strokeStyle = '#0a0a0a';
+            ctx.lineWidth = 4;
+            const rows = 16;
+            const cols = 8;
+            const rh = 512 / rows;
+            const cw = 512 / cols;
+
+            for (let r = 0; r < rows; r++) {
+                const y = r * rh;
+                // Linha horizontal
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(512, y);
+                ctx.stroke();
+
+                // Linhas verticais alternadas (amarração dos tijolos)
+                const offset = (r % 2) * (cw / 2);
+                for (let c = 0; c <= cols + 1; c++) {
+                    const x = c * cw - offset;
+                    ctx.beginPath();
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x, y + rh);
+                    ctx.stroke();
+                }
+            }
+
+            // Sujeira, bolor e ranhuras
+            ctx.fillStyle = 'rgba(5, 12, 5, 0.4)'; // Musgo verde escuro
+            for(let i=0; i<15; i++) {
+                ctx.beginPath();
+                ctx.arc(Math.random()*512, Math.random()*512, Math.random()*60 + 20, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createProceduralFloorTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Pedra fria e escura
+            ctx.fillStyle = '#0f0f0f';
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Detalhes grunge
+            for (let i = 0; i < 5000; i++) {
+                const brightness = Math.floor(Math.random() * 15);
+                ctx.fillStyle = `rgb(${10 + brightness}, ${10 + brightness}, ${10 + brightness})`;
+                ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
+            }
+
+            // Linhas de ladrilhos quadrados
+            ctx.strokeStyle = '#050505';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(0, 0, 256, 256);
+            ctx.beginPath();
+            ctx.moveTo(128, 0); ctx.lineTo(128, 256);
+            ctx.moveTo(0, 128); ctx.lineTo(256, 128);
+            ctx.stroke();
+
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        // --- INICIALIZAÇÃO DO THREE.JS ---
+        function initEngine() {
+            clock = new THREE.Clock();
+
+            // Configuração da Cena
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x000000, 0.045); // Neblina densa para clima assustador
+
+            // Configuração da Câmera Cinematográfica
+            camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 1000);
+            
+            // Renderizador com tratamento de sombras suave
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limita pixel ratio para performance
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            const container = document.getElementById('canvas-container');
+            container.appendChild(renderer.domElement);
+
+            // Ajuste automático ao redimensionar tela
+            window.addEventListener('resize', onWindowResize);
+
+            // Texturas Procedurais
+            const wallTexture = createProceduralBrickTexture();
+            const floorTexture = createProceduralFloorTexture();
+            
+            // Repetição das texturas de forma simétrica
+            wallTexture.wrapS = THREE.RepeatWrapping;
+            wallTexture.wrapT = THREE.RepeatWrapping;
+            wallTexture.repeat.set(1, 1);
+            floorTexture.wrapS = THREE.RepeatWrapping;
+            floorTexture.wrapT = THREE.RepeatWrapping;
+            floorTexture.repeat.set(1, 1);
+
+            // Materiais foscos para máxima absorção de luz
+            const wallMaterial = new THREE.MeshStandardMaterial({ 
+                map: wallTexture, 
+                roughness: 0.9, 
+                metalness: 0.1 
+            });
+            const floorMaterial = new THREE.MeshStandardMaterial({ 
+                map: floorTexture, 
+                roughness: 0.8, 
+                metalness: 0.2 
+            });
+            const ceilingMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x111111, 
+                roughness: 0.95 
+            });
+
+            // Geração de Geometrias da Fase
+            const wallGeometry = new THREE.BoxGeometry(cellSize, cellSize, cellSize);
+            const planeGeometry = new THREE.PlaneGeometry(cellSize, cellSize);
+
+            // Construindo o Mapa
+            for (let r = 0; r < mapSize; r++) {
+                mapGrid[r] = [];
+                for (let c = 0; c < mapSize; c++) {
+                    const blockType = mapLayout[r][c];
+                    mapGrid[r][c] = blockType;
+
+                    const x = c * cellSize - (mapSize * cellSize) / 2 + cellSize / 2;
+                    const z = r * cellSize - (mapSize * cellSize) / 2 + cellSize / 2;
+
+                    // Chão em todo o mapa
+                    const floor = new THREE.Mesh(planeGeometry, floorMaterial);
+                    floor.rotation.x = -Math.PI / 2;
+                    floor.position.set(x, 0, z);
+                    floor.receiveShadow = true;
+                    scene.add(floor);
+
+                    // Teto em todo o mapa
+                    const ceiling = new THREE.Mesh(planeGeometry, ceilingMaterial);
+                    ceiling.rotation.x = Math.PI / 2;
+                    ceiling.position.set(x, cellSize, z);
+                    scene.add(ceiling);
+
+                    if (blockType === 1) {
+                        // Paredes
+                        const wall = new THREE.Mesh(wallGeometry, wallMaterial);
+                        wall.position.set(x, cellSize / 2, z);
+                        wall.castShadow = true;
+                        wall.receiveShadow = true;
+                        scene.add(wall);
+                        wallMeshes.push(wall);
+                    } else {
+                        // Configuração dos itens baseada nos códigos do mapa
+                        if (blockType === 2) {
+                            // Player Spawn
+                            camera.position.set(x, 4.0, z);
+                        } else if (blockType === 3) {
+                            // Criar Relíquia
+                            spawnRelic(x, z);
+                        } else if (blockType === 4) {
+                            // Criar Bateria de Lanterna
+                            spawnBattery(x, z);
+                        } else if (blockType === 5) {
+                            // Criar Monstro (A Sombra)
+                            spawnMonster(x, z);
+                        }
+                    }
+                }
+            }
+
+            // Iluminação - Luz ambiente extremamente escura
+            ambientLight = new THREE.AmbientLight(0x020205, 0.2);
+            scene.add(ambientLight);
+
+            // Lanterna (Attached to Camera)
+            flashlight = new THREE.SpotLight(0xfff3e0, 2.5, 65, Math.PI / 6.5, 0.7, 1);
+            flashlight.castShadow = true;
+            flashlight.shadow.mapSize.width = 1024;
+            flashlight.shadow.mapSize.height = 1024;
+            flashlight.shadow.camera.near = 0.5;
+            flashlight.shadow.camera.far = 70;
+            flashlight.shadow.bias = -0.001;
+            
+            // Adiciona a lanterna na câmera
+            camera.add(flashlight);
+            flashlight.position.set(0, 0, 0);
+            
+            // Alvo da lanterna fica à frente da câmera
+            const flashlightTarget = new THREE.Object3D();
+            flashlightTarget.position.set(0, 0, -1);
+            camera.add(flashlightTarget);
+            flashlight.target = flashlightTarget;
+
+            scene.add(camera);
+
+            // Fallback: Se não encontrou o monstro na matriz, adiciona perto do meio
+            if (!monster) {
+                spawnMonster(0, 0);
+            }
+        }
+
+        // --- SPAWNERS DE ELEMENTOS DO JOGO ---
+
+        // Relíquias que devem ser coletadas
+        function spawnRelic(x, z) {
+            // Geometria cristalina brilhante
+            const geom = new THREE.OctahedronGeometry(1.0, 0);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0x00ffff,
+                emissive: 0x0055ff,
+                roughness: 0.1,
+                metalness: 0.9
+            });
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.position.set(x, 2.5, z);
+            
+            // Luz emanada pelo cristal
+            const light = new THREE.PointLight(0x00ffff, 1.2, 8);
+            mesh.add(light);
+            
+            scene.add(mesh);
+            relics.push(mesh);
+        }
+
+        // Baterias recarregáveis
+        function spawnBattery(x, z) {
+            const group = new THREE.Group();
+            
+            // Cilindro representando a bateria duracell/cyberpunk
+            const geom = new THREE.CylinderGeometry(0.3, 0.3, 1.0, 8);
+            const mat = new THREE.MeshStandardMaterial({
+                color: 0xffaa00,
+                emissive: 0x553300,
+                roughness: 0.3
+            });
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.rotation.x = Math.PI / 4;
+            group.add(mesh);
+
+            // Luz suave para chamar atenção
+            const light = new THREE.PointLight(0xffaa00, 0.8, 5);
+            group.add(light);
+
+            group.position.set(x, 1.5, z);
+            scene.add(group);
+            batteries.push(group);
+        }
+
+        // Monstro Perseguidor: "A Sombra"
+        function spawnMonster(x, z) {
+            monster = new THREE.Group();
+
+            // Corpo fantasmagórico (Esfera preta)
+            const bodyGeom = new THREE.SphereGeometry(1.5, 8, 8);
+            const bodyMat = new THREE.MeshBasicMaterial({ color: 0x010101, transparent: true, opacity: 0.85 });
+            const body = new THREE.Mesh(bodyGeom, bodyMat);
+            body.position.y = 4.0;
+            monster.add(body);
+
+            // Olhos Vermelhos Brilhantes e malévolos
+            const eyeGeom = new THREE.SphereGeometry(0.15, 8, 8);
+            const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+            
+            const leftEye = new THREE.Mesh(eyeGeom, eyeMat);
+            leftEye.position.set(-0.5, 4.2, -1.1);
+            monster.add(leftEye);
+
+            const rightEye = new THREE.Mesh(eyeGeom, eyeMat);
+            rightEye.position.set(0.5, 4.2, -1.1);
+            monster.add(rightEye);
+
+            // Luz fraca emanada pelos olhos para criar reflexos perturbadores
+            const redLight = new THREE.PointLight(0xff0000, 1.5, 12);
+            redLight.position.set(0, 4.2, -1.2);
+            monster.add(redLight);
+
+            monster.position.set(x, 0, z);
+            scene.add(monster);
+        }
+
+        // --- SISTEMAS DE ENTRADA (MOUSE, TECLADO E TOQUE) ---
+
+        let isPointerLocked = false;
+        
+        function setupControls() {
+            // Teclado
+            const onKeyDown = (e) => {
+                if (!GameState.isPlaying) return;
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveDirection.forward = 1; break;
+                    case 'KeyS': case 'ArrowDown': moveDirection.backward = 1; break;
+                    case 'KeyA': case 'ArrowLeft': moveDirection.left = 1; break;
+                    case 'KeyD': case 'ArrowRight': moveDirection.right = 1; break;
+                }
+            };
+
+            const onKeyUp = (e) => {
+                switch (e.code) {
+                    case 'KeyW': case 'ArrowUp': moveDirection.forward = 0; break;
+                    case 'KeyS': case 'ArrowDown': moveDirection.backward = 0; break;
+                    case 'KeyA': case 'ArrowLeft': moveDirection.left = 0; break;
+                    case 'KeyD': case 'ArrowRight': moveDirection.right = 0; break;
+                }
+            };
+
+            document.addEventListener('keydown', onKeyDown);
+            document.addEventListener('keyup', onKeyUp);
+
+            // Pointer Lock para FPS no Desktop
+            const canvas = renderer.domElement;
+            canvas.addEventListener('click', () => {
+                if (GameState.isPlaying && !GameState.isMobile) {
+                    canvas.requestPointerLock();
+                }
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                isPointerLocked = document.pointerLockElement === canvas;
+            });
+
+            // Sensibilidade do olhar do mouse
+            const sensitivity = 0.0022;
+            document.addEventListener('mousemove', (e) => {
+                if (isPointerLocked && GameState.isPlaying) {
+                    playerRotation.yaw -= e.movementX * sensitivity;
+                    playerRotation.pitch -= e.movementY * sensitivity;
+
+                    // Limita angulação para não quebrar o pescoço do personagem
+                    playerRotation.pitch = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, playerRotation.pitch));
+
+                    camera.rotation.set(0, 0, 0);
+                    camera.rotation.y = playerRotation.yaw;
+                    camera.rotation.x = playerRotation.pitch;
+                }
+            });
+
+            // Detecção Automática de Tela Touch / Dispositivo Móvel
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                GameState.isMobile = true;
+                document.getElementById('joystick').style.display = 'block';
+                setupMobileControls();
+            }
+        }
+
+        // Sistema robusto de Touch para Visualização de Câmera e Joystick Virtual
+        function setupMobileControls() {
+            let touchLookId = null;
+            let lastTouchX = 0, lastTouchY = 0;
+
+            // Touch Look (metade direita da tela controla a visão do jogador)
+            window.addEventListener('touchstart', (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (t.clientX > window.innerWidth / 2) {
+                        touchLookId = t.identifier;
+                        lastTouchX = t.clientX;
+                        lastTouchY = t.clientY;
+                        break;
+                    }
+                }
+            }, { passive: true });
+
+            window.addEventListener('touchmove', (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (t.identifier === touchLookId) {
+                        const dx = t.clientX - lastTouchX;
+                        const dy = t.clientY - lastTouchY;
+
+                        playerRotation.yaw -= dx * 0.005;
+                        playerRotation.pitch -= dy * 0.005;
+                        playerRotation.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, playerRotation.pitch));
+
+                        camera.rotation.set(0, 0, 0);
+                        camera.rotation.y = playerRotation.yaw;
+                        camera.rotation.x = playerRotation.pitch;
+
+                        lastTouchX = t.clientX;
+                        lastTouchY = t.clientY;
+                        break;
+                    }
+                }
+            }, { passive: true });
+
+            window.addEventListener('touchend', (e) => {
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    if (e.changedTouches[i].identifier === touchLookId) {
+                        touchLookId = null;
+                        break;
+                    }
+                }
+            });
+
+            // Joystick Virtual (Metade Esquerda da Tela)
+            const joyZone = document.getElementById('joystick');
+            const joyHandle = document.getElementById('joystick-handle');
+            let joyActive = false;
+            let joyTouchId = null;
+            let joyCenter = { x: 0, y: 0 };
+
+            joyZone.addEventListener('touchstart', (e) => {
+                const rect = joyZone.getBoundingClientRect();
+                joyCenter = {
+                    x: rect.left + rect.width / 2,
+                    y: rect.top + rect.height / 2
+                };
+                joyTouchId = e.changedTouches[0].identifier;
+                joyActive = true;
+            }, { passive: true });
+
+            joyZone.addEventListener('touchmove', (e) => {
+                if (!joyActive) return;
+                for (let i = 0; i < e.changedTouches.length; i++) {
+                    const t = e.changedTouches[i];
+                    if (t.identifier === joyTouchId) {
+                        const dx = t.clientX - joyCenter.x;
+                        const dy = t.clientY - joyCenter.y;
+                        const dist = Math.min(Math.sqrt(dx*dx + dy*dy), 45); // limita o raio
+
+                        const angle = Math.atan2(dy, dx);
+                        const moveX = Math.cos(angle) * dist;
+                        const moveY = Math.sin(angle) * dist;
+
+                        joyHandle.style.transform = `translate(${moveX}px, ${moveY}px)`;
+
+                        // Converte deslocamento em comandos direcionais normalized
+                        const normX = moveX / 45;
+                        const normY = moveY / 45;
+
+                        // Mapeamento preciso do Joystick no plano 3D
+                        moveDirection.forward = normY < -0.3 ? -normY : 0;
+                        moveDirection.backward = normY > 0.3 ? normY : 0;
+                        moveDirection.left = normX < -0.3 ? -normX : 0;
+                        moveDirection.right = normX > 0.3 ? normX : 0;
+                        break;
+                    }
+                }
+            }, { passive: true });
+
+            const stopJoystick = () => {
+                joyActive = false;
+                joyTouchId = null;
+                joyHandle.style.transform = 'translate(0px, 0px)';
+                moveDirection.forward = 0;
+                moveDirection.backward = 0;
+                moveDirection.left = 0;
+                moveDirection.right = 0;
+            };
+
+            joyZone.addEventListener('touchend', stopJoystick);
+            joyZone.addEventListener('touchcancel', stopJoystick);
+        }
+
+        // --- SISTEMA DE COLISÃO E FÍSICA ---
+        // Verifica se a posição futura do jogador colide com as paredes da matriz
+        function checkCollisions(futurePos) {
+            // Converter posição do mundo 3D em índices da matriz
+            const checkRadius = playerRadius;
+            const pointsToCheck = [
+                { x: futurePos.x - checkRadius, z: futurePos.z - checkRadius },
+                { x: futurePos.x + checkRadius, z: futurePos.z - checkRadius },
+                { x: futurePos.x - checkRadius, z: futurePos.z + checkRadius },
+                { x: futurePos.x + checkRadius, z: futurePos.z + checkRadius },
+                { x: futurePos.x, z: futurePos.z }
+            ];
+
+            for (let pt of pointsToCheck) {
+                // Cálculo reverso para achar a célula correspondente
+                const col = Math.floor((pt.x + (mapSize * cellSize) / 2) / cellSize);
+                const row = Math.floor((pt.z + (mapSize * cellSize) / 2) / cellSize);
+
+                if (row < 0 || row >= mapSize || col < 0 || col >= mapSize) {
+                    return true; // Fora dos limites é tratado como colisão
+                }
+
+                if (mapGrid[row][col] === 1) {
+                    return true; // Colidiu com bloco de parede
+                }
+            }
+            return false;
+        }
+
+        // --- LOOP DE ANIMAÇÃO E ATUALIZAÇÃO ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (!GameState.isPlaying) return;
+
+            const delta = clock.getDelta();
+
+            // --- 1. Movimentação e Física do Player ---
+            // Vetores de direção local
+            const frontVec = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.yaw);
+            const sideVec = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), playerRotation.yaw);
+
+            const inputDir = new THREE.Vector3();
+            if (moveDirection.forward) inputDir.addScaledVector(frontVec, moveDirection.forward);
+            if (moveDirection.backward) inputDir.addScaledVector(frontVec, -moveDirection.backward);
+            if (moveDirection.left) inputDir.addScaledVector(sideVec, -moveDirection.left);
+            if (moveDirection.right) inputDir.addScaledVector(sideVec, moveDirection.right);
+            
+            inputDir.normalize();
+
+            // Movimento com aceleração/desaceleração linear suave (damping)
+            playerVelocity.copy(inputDir).multiplyScalar(playerSpeed);
+
+            const nextPos = camera.position.clone().addScaledVector(playerVelocity, delta);
+            
+            // Tratamento deslizante de colisões nos eixos X e Z separadamente
+            const testPosX = camera.position.clone();
+            testPosX.x = nextPos.x;
+            if (!checkCollisions(testPosX)) {
+                camera.position.x = nextPos.x;
+            }
+
+            const testPosZ = camera.position.clone();
+            testPosZ.z = nextPos.z;
+            if (!checkCollisions(testPosZ)) {
+                camera.position.z = nextPos.z;
+            }
+
+            // --- 2. Animação de Movimento da Lanterna (Efeito Head-bobbing) ---
+            if (inputDir.lengthSq() > 0) {
+                const time = Date.now() * 0.006;
+                camera.position.y = 4.0 + Math.sin(time) * 0.15; // efeito de passos
+            } else {
+                // Efeito suave de respiração quando parado
+                camera.position.y = 4.0 + Math.sin(Date.now() * 0.0015) * 0.05;
+            }
+
+            // --- 3. Sistema de Consumo da Bateria da Lanterna ---
+            if (GameState.flashlightOn) {
+                // Gasta suavemente ao longo do tempo
+                GameState.battery = Math.max(0, GameState.battery - delta * 0.95);
+                document.getElementById('battery-pct').textContent = Math.floor(GameState.battery) + '%';
+                document.getElementById('battery-bar').style.width = GameState.battery + '%';
+
+                // Pisca a lanterna quando a bateria estiver abaixo de 20%
+                if (GameState.battery < 20 && GameState.battery > 0) {
+                    if (Math.random() < 0.08) {
+                        flashlight.intensity = 0.2;
+                    } else {
+                        flashlight.intensity = 2.5;
+                    }
+                } else if (GameState.battery === 0) {
+                    flashlight.intensity = 0.0;
+                    GameState.flashlightOn = false;
+                } else {
+                    flashlight.intensity = 2.5;
+                }
+            }
+
+            // --- 4. Animação de Rotação e Hover dos Itens (Relíquias e Baterias) ---
+            const rotationSpeed = 1.2 * delta;
+            
+            // Relíquias
+            for (let i = relics.length - 1; i >= 0; i--) {
+                const r = relics[i];
+                r.rotation.y += rotationSpeed;
+                r.rotation.x += rotationSpeed * 0.5;
+                r.position.y = 2.5 + Math.sin(Date.now() * 0.003 + r.position.x) * 0.2;
+
+                // Teste de proximidade para coleta
+                if (camera.position.distanceTo(r.position) < 3.2) {
+                    scene.remove(r);
+                    relics.splice(i, 1);
+                    soundEngine.playCollectSound();
+                    GameState.relicsCollected++;
+                    document.getElementById('relics-counter').textContent = `RELÍQUIAS: ${GameState.relicsCollected} / ${GameState.totalRelics}`;
+                    
+                    showPrompt("Você coletou uma relíquia antiga!");
+
+                    // Condição de vitória ao coletar todas
+                    if (GameState.relicsCollected >= GameState.totalRelics) {
+                        endGame(true);
+                    }
+                }
+            }
+
+            // Baterias
+            for (let i = batteries.length - 1; i >= 0; i--) {
+                const b = batteries[i];
+                b.rotation.y += rotationSpeed;
+                b.position.y = 1.5 + Math.sin(Date.now() * 0.0035 + b.position.x) * 0.15;
+
+                // Coleta da bateria
+                if (camera.position.distanceTo(b.position) < 3.0) {
+                    scene.remove(b);
+                    batteries.splice(i, 1);
+                    soundEngine.playCollectSound();
+                    GameState.battery = Math.min(100, GameState.battery + 40); // Recarrega 40%
+                    if (GameState.battery > 0) GameState.flashlightOn = true;
+                    showPrompt("Bateria da lanterna recarregada!");
+                }
+            }
+
+            // --- 5. Inteligência Artificial do Monstro ("A Sombra") ---
+            if (monster && !GameState.isScreamerActive) {
+                // Direção até o player
+                const dirToPlayer = new THREE.Vector3().subVectors(camera.position, monster.position);
+                dirToPlayer.y = 0; // foca no movimento plano
+                const distanceToPlayer = dirToPlayer.length();
+
+                // Movimentação em direção ao player
+                if (distanceToPlayer < 75) {
+                    dirToPlayer.normalize();
+                    // O monstro acelera e fica mais veloz à medida que o player acumula relíquias
+                    const speedMultiplier = 1.0 + (GameState.relicsCollected * 0.35);
+                    const monsterSpeed = 5.2 * speedMultiplier;
+                    
+                    // Rotação suave do monstro encarando o player
+                    const targetAngle = Math.atan2(dirToPlayer.x, dirToPlayer.z);
+                    monster.rotation.y = THREE.MathUtils.lerp(monster.rotation.y, targetAngle, 0.1);
+
+                    monster.position.addScaledVector(dirToPlayer, monsterSpeed * delta);
+                    monster.position.y = Math.sin(Date.now() * 0.003) * 0.3; // flutuação sinistra
+                }
+
+                // Condição de derrota por proximidade (Susto / Jumpscare)
+                if (distanceToPlayer < 3.8) {
+                    triggerScreamer();
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- SISTEMAS DE INTERFACE DO JOGO ---
+
+        // Mostrar dicas no HUD
+        function showPrompt(text) {
+            const el = document.getElementById('game-prompt');
+            el.textContent = text;
+            el.style.opacity = '1';
+            setTimeout(() => {
+                el.style.opacity = '0';
+            }, 3000);
+        }
+
+        // Evento de Dimensionamento de Tela
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Dispara o Susto (Jumpscare) ao ser pego
+        function triggerScreamer() {
+            GameState.isScreamerActive = true;
+            soundEngine.playScreamerSound();
+
+            // Força a câmera a olhar diretamente para o monstro
+            camera.lookAt(monster.position.clone().add(new THREE.Vector3(0, 4.0, 0)));
+            
+            // Adiciona tremor violento de câmera e flicker vermelho na tela
+            document.body.classList.add('screamer-active');
+            
+            // Congela o input de movimento
+            moveDirection.forward = moveDirection.backward = moveDirection.left = moveDirection.right = 0;
+
+            setTimeout(() => {
+                document.body.classList.remove('screamer-active');
+                endGame(false);
+            }, 1800);
+        }
+
+        // Finaliza o ciclo de jogo (Derrota ou Vitória)
+        function endGame(victory) {
+            GameState.isPlaying = false;
+            document.exitPointerLock();
+
+            const endScreen = document.getElementById('end-screen');
+            const endTitle = document.getElementById('end-title');
+            const endSubtitle = document.getElementById('end-subtitle');
+
+            document.getElementById('hud').style.opacity = '0';
+            endScreen.classList.remove('hidden');
+
+            if (victory) {
+                endTitle.textContent = "VOCÊ ESCAPOU";
+                endTitle.className = "text-5xl md:text-8xl font-black text-cyan-500 tracking-widest uppercase mb-4";
+                endSubtitle.textContent = "Sua determinação baniu a Sombra... por enquanto. Você sobreviveu à noite.";
+            } else {
+                endTitle.textContent = "VOCÊ MORREU";
+                endTitle.className = "text-5xl md:text-8xl font-black text-red-700 tracking-widest uppercase mb-4";
+                endSubtitle.textContent = "A Sombra devorou sua alma nas profundezas do labirinto escuro.";
+            }
+        }
+
+        // Reinicia todos os estados para reiniciar a jogada
+        function restartGame() {
+            // Limpa entidades antigas da cena do Three.js
+            for (let r of relics) scene.remove(r);
+            for (let b of batteries) scene.remove(b);
+            if (monster) scene.remove(monster);
+
+            relics = [];
+            batteries = [];
+            
+            // Redefine variáveis de gameplay
+            GameState.relicsCollected = 0;
+            GameState.battery = 100;
+            GameState.flashlightOn = true;
+            GameState.isScreamerActive = false;
+            GameState.isPlaying = true;
+
+            // Reinicializa posições de mapa
+            for (let r = 0; r < mapSize; r++) {
+                for (let c = 0; c < mapSize; c++) {
+                    const blockType = mapLayout[r][c];
+                    const x = c * cellSize - (mapSize * cellSize) / 2 + cellSize / 2;
+                    const z = r * cellSize - (mapSize * cellSize) / 2 + cellSize / 2;
+
+                    if (blockType === 2) {
+                        camera.position.set(x, 4.0, z);
+                    } else if (blockType === 3) {
+                        spawnRelic(x, z);
+                    } else if (blockType === 4) {
+                        spawnBattery(x, z);
+                    } else if (blockType === 5) {
+                        spawnMonster(x, z);
+                    }
+                }
+            }
+
+            // Reseta controles
+            playerRotation = { yaw: 0, pitch: 0 };
+            camera.rotation.set(0,0,0);
+            playerVelocity.set(0,0,0);
+
+            // Reseta HUD
+            document.getElementById('relics-counter').textContent = `RELÍQUIAS: 0 / ${GameState.totalRelics}`;
+            document.getElementById('battery-pct').textContent = '100%';
+            document.getElementById('battery-bar').style.width = '100%';
+            document.getElementById('end-screen').classList.add('hidden');
+            document.getElementById('hud').style.opacity = '1';
+
+            showPrompt("Procure pelas 3 relíquias brilhantes...");
+        }
+
+        // --- ENTRADA PRINCIPAL DO JOGO (On Load) ---
+        window.onload = function() {
+            // Inicializa a engine gráfica 3D
+            initEngine();
+            // Configura periféricos de controle
+            setupControls();
+
+            // Ações de Botões
+            document.getElementById('start-btn').addEventListener('click', () => {
+                // Inicializa o som dinâmico (necessita de interação do usuário)
+                soundEngine.init();
+
+                document.getElementById('main-menu').style.opacity = '0';
+                setTimeout(() => {
+                    document.getElementById('main-menu').classList.add('hidden');
+                }, 500);
+
+                // Inicia loop de render
+                GameState.isPlaying = true;
+                document.getElementById('hud').style.opacity = '1';
+                showPrompt("Colete todas as Relíquias para purificar o local!");
+                
+                // Ativa Pointer Lock caso não seja mobile
+                if (!GameState.isMobile) {
+                    renderer.domElement.requestPointerLock();
+                }
+            });
+
+            document.getElementById('restart-btn').addEventListener('click', () => {
+                restartGame();
+                if (!GameState.isMobile) {
+                    renderer.domElement.requestPointerLock();
+                }
+            });
+
+            // Start loop infinito de física e render
+            animate();
+        };
+    </script>
+</body>
+</html>
